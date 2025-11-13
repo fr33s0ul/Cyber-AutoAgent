@@ -128,17 +128,27 @@ def validate_output_path(path: str, base_dir: str) -> bool:
         return False
 
 
+def _is_path_restricted(abs_path: str) -> bool:
+    restricted = os.getenv(
+        "CYBER_PROTECTED_PATHS",
+        "/root,/etc,/bin,/usr/bin,/usr/sbin,/lib,/lib64,/boot",
+    )
+    prefixes = [p.strip() for p in restricted.split(",") if p.strip()]
+    for prefix in prefixes:
+        normalized = os.path.abspath(prefix)
+        if abs_path == normalized or abs_path.startswith(f"{normalized}/"):
+            return True
+    return False
+
+
 def create_output_directory(path: str) -> bool:
-    """Create output directory if it doesn't exist.
+    """Create output directory if it doesn't exist."""
 
-    Args:
-        path: Directory path to create
-
-    Returns:
-        True if directory was created or already exists, False on error
-    """
+    abs_path = os.path.abspath(path)
+    if _is_path_restricted(abs_path):
+        return False
     try:
-        os.makedirs(path, exist_ok=True)
+        os.makedirs(abs_path, exist_ok=True)
         return True
     except OSError:
         return False

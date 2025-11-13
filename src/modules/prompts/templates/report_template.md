@@ -36,6 +36,12 @@
 ## KEY FINDINGS
 {findings_table}
 
+### Confirmed High-Impact Findings
+{confirmed_high_impact}
+
+### Potential Findings – Needs Manual Review
+{potential_findings}
+
 ## DETAILED VULNERABILITY ANALYSIS
 
 ### Critical Findings
@@ -49,6 +55,9 @@
 
 ## EVIDENCE COLLECTION
 {evidence_text}
+
+### Evidence Summary
+{evidence_summary}
 
 ## RISK ASSESSMENT
 ```mermaid
@@ -79,6 +88,13 @@ pie title Vulnerability Distribution by Severity
 ## TECHNICAL APPENDIX
 {technical_appendix}
 
+## COST & TOKEN TRANSPARENCY
+- Model Profile: {model_profile}
+- Provider: {model_provider}
+- Estimated Cost: {estimated_cost}
+- Telemetry:
+{cost_breakdown}
+
 ## ASSESSMENT METHODOLOGY
 Tools Utilized:
 {tools_summary}
@@ -88,8 +104,6 @@ Execution Metrics:
 - Output Tokens: {output_tokens}
 - Total Tokens: {total_tokens}
 - Total Duration: {total_duration}
-- Estimated Cost: {estimated_cost}
-
 Total Steps Executed: {steps_executed}
 Analysis Framework: {analysis_framework}
 

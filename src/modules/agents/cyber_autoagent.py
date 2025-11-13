@@ -7,7 +7,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import json
 
 from strands import Agent
@@ -20,7 +20,7 @@ from strands_tools.http_request import http_request
 from strands_tools.load_tool import load_tool
 from strands_tools.python_repl import python_repl
 from strands_tools.shell import shell
-from strands_tools.stop import stop
+from modules.tools.guarded_stop import guarded_stop
 from strands_tools.swarm import swarm
 
 from modules import prompts
@@ -30,6 +30,13 @@ from modules.handlers import ReasoningHandler
 from modules.handlers.utils import print_status, sanitize_target_name
 from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
 from modules.tools.prompt_optimizer import prompt_optimizer
+from modules.tools.response_validation_tool import response_validation_tool
+from modules.tools.finding_confirmation_tool import confirm_finding_tool
+from modules.tools.knowledge_base import knowledge_base_lookup, list_high_impact_patterns
+from modules.tools.zero_day_detector import zero_day_pattern_scan
+from modules.planner.adaptive_chain import adaptive_chain_plan
+from modules.validation.response_validation import bootstrap_default_baselines
+from modules.telemetry.cost_tracker import register_pricing
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -220,6 +227,7 @@ def _create_remote_model(
     model_id: str,
     region_name: str,
     provider: str = "bedrock",
+    role_parameters: Optional[Dict[str, Any]] = None,
 ) -> BedrockModel:
     """Create AWS Bedrock model instance using centralized configuration."""
     from botocore.config import Config as BotocoreConfig
@@ -268,12 +276,19 @@ def _create_remote_model(
     if config.get("additional_request_fields"):
         model_kwargs["additional_request_fields"] = config["additional_request_fields"]
 
+    if role_parameters:
+        for key in ("temperature", "max_tokens", "top_p"):
+            if key in role_parameters:
+                model_kwargs[key] = role_parameters[key]
+        if "additional_request_fields" in role_parameters:
+            model_kwargs["additional_request_fields"] = role_parameters["additional_request_fields"]
     return BedrockModel(**model_kwargs)
 
 
 def _create_local_model(
     model_id: str,
     provider: str = "ollama",
+    role_parameters: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """Create Ollama model instance using centralized configuration."""
 
@@ -281,11 +296,13 @@ def _create_local_model(
     config_manager = get_config_manager()
     config = config_manager.get_local_model_config(model_id, provider)
 
+    temperature = role_parameters.get("temperature") if role_parameters else None
+    max_tokens = role_parameters.get("max_tokens") if role_parameters else None
     return OllamaModel(
         host=config["host"],
         model_id=config["model_id"],
-        temperature=config["temperature"],
-        max_tokens=config["max_tokens"],
+        temperature=temperature or config["temperature"],
+        max_tokens=max_tokens or config["max_tokens"],
     )
 
 
@@ -293,6 +310,7 @@ def _create_litellm_model(
     model_id: str,
     region_name: str,
     provider: str = "litellm",
+    role_parameters: Optional[Dict[str, Any]] = None,
 ) -> LiteLLMModel:
     """Create LiteLLM model instance for universal provider access."""
 
@@ -331,8 +349,8 @@ def _create_litellm_model(
 
     # Build params dict with optional reasoning parameters
     params = {
-        "temperature": config["temperature"],
-        "max_tokens": config["max_tokens"],
+        "temperature": role_parameters.get("temperature", config["temperature"]) if role_parameters else config["temperature"],
+        "max_tokens": role_parameters.get("max_tokens", config["max_tokens"]) if role_parameters else config["max_tokens"],
     }
 
     # Only include top_p if present in config (avoid provider conflicts)
@@ -400,18 +418,25 @@ def create_agent(
         config.objective = objective
 
     # Backward-compatibility: accept keyword args used by older tests
+    user_provider_override = False
+    user_model_override = False
+    user_steps_override = False
     if kwargs:
         if "provider" in kwargs and kwargs["provider"]:
             config.provider = kwargs["provider"]
+            user_provider_override = True
         if "max_steps" in kwargs and kwargs["max_steps"]:
             config.max_steps = int(kwargs["max_steps"])
+            user_steps_override = True
         if "op_id" in kwargs and kwargs["op_id"]:
             config.op_id = kwargs["op_id"]
         # Some tests may use 'model' instead of 'model_id'
         if "model" in kwargs and kwargs["model"]:
             config.model_id = kwargs["model"]
+            user_model_override = True
         if "model_id" in kwargs and kwargs["model_id"]:
             config.model_id = kwargs["model_id"]
+            user_model_override = True
         if "region" in kwargs and kwargs["region"]:
             config.region_name = kwargs["region"]
         if "region_name" in kwargs and kwargs["region_name"]:
@@ -433,6 +458,35 @@ def create_agent(
 
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
+    profile_name = os.getenv("CYBER_MODEL_PROFILE", "bedrock-haiku3").lower()
+    core_profile = None
+    if not user_model_override:
+        get_role = getattr(config_manager, "get_profile_role", None)
+        if callable(get_role):
+            try:
+                maybe_profile = get_role(profile_name, "core_reasoner")
+            except Exception as exc:  # pragma: no cover - defensive guard for mocked managers
+                agent_logger.debug("Model profile lookup failed: %s", exc)
+                maybe_profile = None
+            if isinstance(maybe_profile, dict):
+                core_profile = maybe_profile
+    if isinstance(core_profile, dict):
+        if not user_provider_override and core_profile.get("provider"):
+            config.provider = core_profile["provider"]
+        if not config.model_id and core_profile.get("model_id"):
+            config.model_id = core_profile["model_id"]
+        register_pricing(core_profile.get("model_id"), config.provider, core_profile.get("pricing"))
+        agent_logger.info(
+            "Model profile '%s' selected core provider=%s model=%s",
+            profile_name,
+            config.provider,
+            config.model_id,
+        )
+    core_role_params = core_profile.get("parameters", {}) if isinstance(core_profile, dict) else {}
+
+    if not user_steps_override and profile_name in {"cheap", "bedrock-haiku3"}:
+        config.max_steps = max(config.max_steps, 140)
+        os.environ["CYBER_BREADTH_MODE"] = "haiku"
     config_manager.validate_requirements(config.provider)
 
     # Prepare overrides if user specified a model
@@ -450,6 +504,10 @@ def create_agent(
     # Use provided model_id or default
     if config.model_id is None:
         config.model_id = server_config.llm.model_id
+
+    os.environ["CYBER_ACTIVE_PROVIDER"] = config.provider
+    if config.model_id:
+        os.environ["CYBER_ACTIVE_MODEL"] = config.model_id
 
 
     # Use provided operation_id or generate new one
@@ -514,6 +572,10 @@ def create_agent(
                 os.environ["CYBER_OPERATION_ID"] = operation_id
             if target_name:
                 os.environ["CYBER_TARGET_NAME"] = target_name
+        if config.provider:
+            os.environ["CYBER_AGENT_PROVIDER"] = config.provider
+        os.environ["CYBER_MAX_STEPS"] = str(config.max_steps)
+        os.environ.setdefault("CYBER_COVERAGE_MIN_CLASSES", "3")
 
         # Fix python_repl race condition by disabling PTY mode
         os.environ["PYTHON_REPL_INTERACTIVE"] = "false"
@@ -522,6 +584,10 @@ def create_agent(
 
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
+    try:
+        bootstrap_default_baselines(config.target, operation_id, provider=config.provider)
+    except Exception as exc:
+        agent_logger.debug("Baseline bootstrap skipped: %s", exc)
 
     # Get memory overview for system prompt enhancement and UI display
     memory_overview = None
@@ -882,15 +948,19 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     try:
         if config.provider == "ollama":
             agent_logger.debug("Configuring OllamaModel")
-            model = _create_local_model(config.model_id, config.provider)
+            model = _create_local_model(config.model_id, config.provider, role_parameters=core_role_params)
             print_status(f"Ollama model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
-            model = _create_remote_model(config.model_id, config.region_name, config.provider)
+            model = _create_remote_model(
+                config.model_id, config.region_name, config.provider, role_parameters=core_role_params
+            )
             print_status(f"Bedrock model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
-            model = _create_litellm_model(config.model_id, config.region_name, config.provider)
+            model = _create_litellm_model(
+                config.model_id, config.region_name, config.provider, role_parameters=core_role_params
+            )
             print_status(f"LiteLLM model initialized: {config.model_id}", "SUCCESS")
         else:
             raise ValueError(f"Unsupported provider: {config.provider}")
@@ -908,9 +978,15 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         load_tool,
         mem0_memory,
         prompt_optimizer,
-        stop,
+        guarded_stop,
         http_request,
         python_repl,
+        response_validation_tool,
+        confirm_finding_tool,
+        knowledge_base_lookup,
+        list_high_impact_patterns,
+        zero_day_pattern_scan,
+        adaptive_chain_plan,
     ]
 
     # Inject module-specific tools if available

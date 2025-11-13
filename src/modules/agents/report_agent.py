@@ -8,6 +8,7 @@ avoid code duplication.
 """
 
 import logging
+import os
 from typing import Optional
 
 from strands import Agent
@@ -18,6 +19,7 @@ from strands.models.ollama import OllamaModel
 
 from modules.config.manager import get_config_manager
 from modules.prompts.factory import get_report_agent_system_prompt
+from modules.telemetry.cost_tracker import register_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +63,24 @@ class ReportGenerator:
         """
         # Select model via central configuration, with sensible defaults
         cfg = get_config_manager()
-        prov = (provider or "bedrock").lower()
+        profile_name = os.getenv("CYBER_MODEL_PROFILE", "bedrock-haiku3").lower()
+        reporting_role = None
+        get_role = getattr(cfg, "get_profile_role", None)
+        if callable(get_role):
+            try:
+                maybe_role = get_role(profile_name, "reporting")
+            except Exception as exc:  # pragma: no cover - mocked manager guard
+                logger.debug("Report profile lookup failed: %s", exc)
+                maybe_role = None
+            if isinstance(maybe_role, dict):
+                reporting_role = maybe_role
+        role_params = reporting_role.get("parameters", {}) if isinstance(reporting_role, dict) else {}
+        effective_provider = provider or (reporting_role.get("provider") if isinstance(reporting_role, dict) else "bedrock")
+        prov = (effective_provider or "bedrock").lower()
+        if not model_id and isinstance(reporting_role, dict) and reporting_role.get("model_id"):
+            model_id = reporting_role.get("model_id")
+        if isinstance(reporting_role, dict):
+            register_pricing(model_id, prov, reporting_role.get("pricing"))
         if prov == "bedrock":
             # Always use the primary bedrock model from config
             llm_cfg = cfg.get_llm_config("bedrock")
@@ -85,13 +104,16 @@ class ReportGenerator:
             else:
                 # Default to 32k for non-3.5 models to satisfy provider limits
                 max_tokens = 32000
+            if "max_tokens" in role_params:
+                max_tokens = role_params["max_tokens"]
+            temperature = role_params.get("temperature", 0.3)
             # Ensure explicit region to avoid environment inconsistencies
             region = cfg.get_server_config("bedrock").region
             model = BedrockModel(
                 model_id=mid,
                 region_name=region,
                 max_tokens=max_tokens,
-                temperature=0.3,
+                temperature=temperature,
                 boto_client_config=boto_config,
             )
         elif prov == "ollama":
@@ -99,12 +121,25 @@ class ReportGenerator:
             llm_cfg = cfg.get_llm_config("ollama")
             # Only override if explicitly provided, otherwise use config
             mid = model_id if model_id else llm_cfg.model_id
-            model = OllamaModel(host=host, model_id=mid)
+            temperature = role_params.get("temperature")
+            max_tokens = role_params.get("max_tokens")
+            model = OllamaModel(
+                host=host,
+                model_id=mid,
+                temperature=temperature or llm_cfg.temperature,
+                max_tokens=max_tokens or llm_cfg.max_tokens,
+            )
         else:  # litellm
             llm_cfg = cfg.get_llm_config("litellm")
             # Only override if explicitly provided, otherwise use config
             mid = model_id if model_id else llm_cfg.model_id
-            model = LiteLLMModel(model_id=mid)
+            params = {
+                "temperature": role_params.get("temperature", llm_cfg.temperature),
+                "max_tokens": role_params.get("max_tokens", llm_cfg.max_tokens),
+            }
+            if "top_p" in role_params:
+                params["top_p"] = role_params["top_p"]
+            model = LiteLLMModel(model_id=mid, params=params)
 
         # Import the report builder tool
         from modules.tools.report_builder import build_report_sections

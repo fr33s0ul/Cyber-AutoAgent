@@ -15,11 +15,13 @@ Key Components:
 - Validation and error handling
 """
 
+import copy
 import importlib.util
 import logging
 import os
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
@@ -335,6 +337,7 @@ class ConfigManager:
         """Initialize configuration manager."""
         self._config_cache = {}
         self._default_configs = self._initialize_default_configs()
+        self._model_profiles = self._load_model_profiles()
 
     def get_default_region(self) -> str:
         """Get the default AWS region with environment override support."""
@@ -531,6 +534,50 @@ class ConfigManager:
             },
         }
 
+    def _load_model_profiles(self) -> Dict[str, Dict[str, Any]]:
+        path = Path("config/model_profiles.yaml")
+        if not path.exists():
+            return {}
+        try:
+            import yaml  # type: ignore
+        except Exception:
+            logger.warning("PyYAML not available - skipping model profile loading")
+            return {}
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+            profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
+            normalized = {}
+            for name, payload in profiles.items():
+                if isinstance(payload, dict):
+                    normalized[str(name).lower()] = payload
+            return normalized
+        except Exception as exc:
+            logger.warning("Failed to parse model_profiles.yaml: %s", exc)
+            return {}
+
+    def get_available_model_profiles(self) -> List[str]:
+        return sorted(self._model_profiles.keys())
+
+    def get_profile_role(self, profile: str, role: str) -> Optional[Dict[str, Any]]:
+        if not profile:
+            return None
+        profile_data = self._model_profiles.get(profile.lower())
+        if not profile_data:
+            return None
+        roles = profile_data.get("roles") or {}
+        entry = roles.get(role)
+        if not isinstance(entry, dict):
+            return None
+        return {
+            "provider": entry.get("provider"),
+            "model_id": entry.get("model_id"),
+            "parameters": entry.get("parameters", {}),
+            "cost_tier": entry.get("cost_tier", "balanced"),
+            "pricing": entry.get("pricing"),
+            "context_tokens": entry.get("context_tokens"),
+            "latency_hint_ms": entry.get("latency_hint_ms"),
+        }
+
     def get_server_config(self, provider: str, **overrides) -> ServerConfig:
         """Get complete provider configuration with optional overrides."""
         logger.debug("Getting server config for provider: %s", provider)
@@ -542,7 +589,8 @@ class ConfigManager:
             logger.error("Provider %s not in available configs: %s", provider, list(self._default_configs.keys()))
             raise ValueError(f"Unsupported provider type: {provider}")
 
-        defaults = self._default_configs[provider].copy()
+        # Use deep copy so overrides never mutate the cached defaults
+        defaults = copy.deepcopy(self._default_configs[provider])
 
         # Apply environment variable overrides
         defaults = self._apply_environment_overrides(provider, defaults)

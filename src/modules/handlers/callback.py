@@ -12,13 +12,15 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from strands.handlers import PrintingCallbackHandler
 
 from ..handlers.events import get_emitter
 from .base import HandlerState, StepLimitReached
 from .utils import emit_event
+from modules.coverage.tracker import record_tool_activity
+from modules.telemetry.cost_tracker import record_usage as record_cost_usage
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -70,6 +72,8 @@ class ReasoningHandler(PrintingCallbackHandler):
     def __call__(self, **kwargs):
         """Process callback events with proper step limiting and clean formatting"""
 
+        self._maybe_record_cost(kwargs)
+
         # Check for interrupt
         if "cyberautoagent" in sys.modules:
             cyberautoagent = sys.modules["cyberautoagent"]
@@ -96,6 +100,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         if "message" in kwargs:
             message = kwargs["message"]
             if isinstance(message, dict):
+                self._maybe_record_cost(message)
                 content = message.get("content", [])
 
                 # Agent tracking handled through explicit handoff events only
@@ -121,6 +126,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
                                 try:
+                                    command_text = ""
+                                    if tool_use.get("name") == "shell":
+                                        raw_cmd = tool_input.get("command")
+                                        if isinstance(raw_cmd, list):
+                                            command_text = " ".join(str(p) for p in raw_cmd)
+                                        elif isinstance(raw_cmd, str):
+                                            command_text = raw_cmd
+                                    record_tool_activity(self.state.operation_id, tool_use.get("name", ""), command_text)
                                     # Emit tool start event
                                     tool_name = tool_use.get("name", "unknown")
                                     emit_event(
@@ -203,6 +216,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                     self.state.shown_tools.add(tool_id)
                     self.state.tool_use_map[tool_id] = tool
                     try:
+                        command_text = ""
+                        if tool.get("name") == "shell":
+                            raw_cmd = tool_input.get("command")
+                            if isinstance(raw_cmd, list):
+                                command_text = " ".join(str(p) for p in raw_cmd)
+                            elif isinstance(raw_cmd, str):
+                                command_text = raw_cmd
+                        record_tool_activity(self.state.operation_id, tool.get("name", ""), command_text)
                         # Emit tool start event
                         tool_name = tool.get("name", "unknown")
                         emit_event(
@@ -271,6 +292,58 @@ class ReasoningHandler(PrintingCallbackHandler):
                 super().__call__(**kwargs)
             return
 
+    def _extract_usage_payload(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return None
+        for key in ("usage", "token_usage", "tokenUsage"):
+            maybe = payload.get(key)
+            if isinstance(maybe, dict):
+                return maybe
+        message = payload.get("message")
+        if isinstance(message, dict):
+            for key in ("usage", "token_usage", "tokenUsage"):
+                maybe = message.get(key)
+                if isinstance(maybe, dict):
+                    return maybe
+        return None
+
+    def _maybe_record_cost(self, payload: Dict[str, Any]) -> None:
+        usage = self._extract_usage_payload(payload)
+        if not usage:
+            return
+        try:
+            prompt_tokens = float(
+                usage.get("prompt_tokens")
+                or usage.get("input_tokens")
+                or usage.get("promptTokens")
+                or usage.get("inputTokens")
+                or 0
+            )
+            completion_tokens = float(
+                usage.get("completion_tokens")
+                or usage.get("output_tokens")
+                or usage.get("completionTokens")
+                or usage.get("outputTokens")
+                or 0
+            )
+        except Exception:
+            return
+        if prompt_tokens <= 0 and completion_tokens <= 0:
+            return
+        provider = (
+            usage.get("provider")
+            or os.getenv("CYBER_ACTIVE_PROVIDER")
+            or os.getenv("CYBER_AGENT_PROVIDER", "bedrock")
+        )
+        model_id = usage.get("model") or usage.get("model_id") or os.getenv("CYBER_ACTIVE_MODEL", "")
+        record_cost_usage(
+            self.state.operation_id,
+            str(provider),
+            str(model_id),
+            prompt_tokens,
+            completion_tokens,
+        )
+
     def _is_valid_tool_use(self, tool_name: str, tool_input: Any) -> bool:
         """Check if this tool use has valid input (not empty)"""
         if not tool_input:
@@ -332,6 +405,10 @@ class ReasoningHandler(PrintingCallbackHandler):
 
             # Emit reasoning event instead of direct print
             emit_event("reasoning", normalized_text, operation_id=self.state.operation_id, step=self.state.steps)
+            try:
+                os.environ["CYBER_CURRENT_STEPS"] = str(self.state.steps)
+            except Exception:
+                pass
             self.state.last_was_reasoning = True
 
     def generate_report(self, agent: Any, objective: str) -> None:

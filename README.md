@@ -162,6 +162,7 @@ The compose stack automatically provides:
 - **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
 - **[Terminal Frontend](docs/terminal-frontend.md)** - React interface architecture and event protocol
 - **[Prompt Management](docs/prompt_management.md)** - Module system and prompt loading
+- **[Haiku3 vs Premium Benchmarks](benchmark_harness/haiku3_vs_premium.md)** - Cost/performance comparison harness and results
 
 ## Features
 
@@ -175,6 +176,9 @@ The compose stack automatically provides:
 - **Swarm Intelligence**: Deploy parallel agents with shared memory for complex tasks
 - **Real-Time Monitoring**: React interface displays live agent reasoning and tool execution
 - **Observability**: Built-in Langfuse tracing and Ragas evaluation metrics
+- **False-Positive Defense**: Baseline-aware response validation, negative controls, and confirmation tooling gate HIGH/CRITICAL claims
+- **Offline Knowledge Base & Heuristics**: Built-in CVE/payload library plus zero-day heuristic detection and adaptive chain planning for novel endpoints
+- **Cost Telemetry & Tiered Models**: Breadth-first Haiku3 profile by default, with automatic cost tracking and premium-only confirmation/reporting escalation (`CYBER_MODEL_PROFILE=bedrock-haiku3|cheap|balanced|premium`)
 
 ## Architecture
 
@@ -689,6 +693,36 @@ The `.env.example` file contains detailed configuration options with inline comm
 - `MEM0_API_KEY` or `OPENSEARCH_HOST` for memory backends
 
 See `.env.example` for complete configuration options and usage examples.
+
+### Response Validation & Confirmation
+
+- Use `response_validation_tool` to record baselines (`action=record_baseline`), compare candidate responses, and automatically send negative-control gibberish requests. The tool returns a `validation_classification` that is enforced by `mem0_memory` (HIGH/CRITICAL requires `CONFIRMED_*`).
+- Run `confirm_finding_tool` for every high-impact hypothesis (auth bypass, IDOR, SQLi, RCE, XSS). It replays control requests, inspects artifacts, and produces `confirmation_status` metadata that flows into the final report.
+- Findings stored without verified evidence are auto-downgraded in severity/confidence and marked as `hypothesis` to prevent false positives.
+
+### Knowledge Base & Zero-Day Heuristics
+
+- Call `knowledge_base_lookup`/`list_high_impact_patterns` at the start of each engagement to preload CVE payloads, exploit chains, and validation tips directly from `docs/knowledge_base/offline_kb.yaml`.
+- Use `zero_day_pattern_scan` whenever you encounter admin/debug endpoints; the tool tags zero-day coverage and feeds indicators into `adaptive_chain_plan` so multi-step exploits are laid out automatically.
+- The planner module (`adaptive_chain_plan`) ensures discovery → enumeration → proof → escalation chains are explicitly written before the agent proceeds.
+
+### Cost Tracking & Transparency
+
+- The callback handler records prompt/completion tokens and estimated USD spend per operation via `modules.telemetry.cost_tracker`. Pricing data comes from `config/model_profiles.yaml`.
+- Final reports now show a "Cost & Token Transparency" section with the active profile/provider, telemetry breakdown, and estimated spend.
+- Monitor `CYBER_MODEL_PROFILE` (default `bedrock-haiku3`) to favor cheap breadth-first Haiku runs and reserve `premium` for verification/reporting only.
+
+### Coverage Tracker & Guarded Stop
+
+- The runtime tracks coverage across high-impact categories (auth, IDOR/business logic, injection/RCE, SSRF, XSS, misconfiguration, recon, zero-day heuristics) by observing tool usage and heuristic signals.
+- The `guarded_stop` tool replaces the default stop command and blocks termination until either ≥ `CYBER_COVERAGE_MIN_CLASSES` categories were attempted or ≥95% of the budget was consumed. Override the threshold via `CYBER_COVERAGE_MIN_CLASSES`.
+- Coverage status is updated whenever `http_request`, `advanced_payload_coordinator`, `auth_chain_analyzer`, `confirm_finding_tool`, `zero_day_pattern_scan`, etc. run, encouraging multi-bug exploration instead of stopping after the first win.
+
+### Model Profiles
+
+- Define reusable model/provider mappings in `config/model_profiles.yaml`. Each profile contains `core_reasoner`, `confirmation`, and `reporting` roles with provider, model_id, and optional parameters.
+- Select a profile via `CYBER_MODEL_PROFILE=bedrock-haiku3|cheap|balanced|premium` (default: `bedrock-haiku3`). The agent automatically picks the cheapest viable provider unless the user overrides `--provider`/`--model-id`.
+- Report generation also honors the profile (`reporting` role), so you can run the main agent on a cost-efficient model while keeping the final write-up on a premium provider.
 
 ## Development & Testing
 
