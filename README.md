@@ -175,6 +175,8 @@ The compose stack automatically provides:
 - **Swarm Intelligence**: Deploy parallel agents with shared memory for complex tasks
 - **Real-Time Monitoring**: React interface displays live agent reasoning and tool execution
 - **Observability**: Built-in Langfuse tracing and Ragas evaluation metrics
+- **False-Positive Defense**: Baseline-aware response validation, negative controls, and confirmation tooling gate HIGH/CRITICAL claims
+- **Model Profiles**: Tiered provider profiles choose cost-effective models automatically (`CYBER_MODEL_PROFILE=cheap|balanced|premium`)
 
 ## Architecture
 
@@ -689,6 +691,24 @@ The `.env.example` file contains detailed configuration options with inline comm
 - `MEM0_API_KEY` or `OPENSEARCH_HOST` for memory backends
 
 See `.env.example` for complete configuration options and usage examples.
+
+### Response Validation & Confirmation
+
+- Use `response_validation_tool` to record baselines (`action=record_baseline`), compare candidate responses, and automatically send negative-control gibberish requests. The tool returns a `validation_classification` that is enforced by `mem0_memory` (HIGH/CRITICAL requires `CONFIRMED_*`).
+- Run `confirm_finding_tool` for every high-impact hypothesis (auth bypass, IDOR, SQLi, RCE, XSS). It replays control requests, inspects artifacts, and produces `confirmation_status` metadata that flows into the final report.
+- Findings stored without verified evidence are auto-downgraded in severity/confidence and marked as `hypothesis` to prevent false positives.
+
+### Coverage Tracker & Guarded Stop
+
+- The runtime tracks coverage across six categories (auth, injection, XSS, misconfiguration, business logic/IDOR, recon) by observing tool usage.
+- The `guarded_stop` tool replaces the default stop command and blocks termination until either ≥ `CYBER_COVERAGE_MIN_CLASSES` categories were attempted or ≥95% of the budget was consumed. Override the threshold via `CYBER_COVERAGE_MIN_CLASSES`.
+- Coverage status is updated whenever `http_request`, `advanced_payload_coordinator`, `auth_chain_analyzer`, `confirm_finding_tool`, etc. run, encouraging multi-bug exploration instead of stopping after the first win.
+
+### Model Profiles
+
+- Define reusable model/provider mappings in `config/model_profiles.yaml`. Each profile contains `core_reasoner`, `confirmation`, and `reporting` roles with provider, model_id, and optional parameters.
+- Select a profile via `CYBER_MODEL_PROFILE=cheap|balanced|premium` (default: `balanced`). The agent automatically picks the cheapest viable provider unless the user overrides `--provider`/`--model-id`.
+- Report generation also honors the profile (`reporting` role), so you can run the main agent on a cost-efficient model while keeping the final write-up on a premium provider.
 
 ## Development & Testing
 

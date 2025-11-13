@@ -1,0 +1,44 @@
+profiles:
+  cheap:
+    roles:
+      core_reasoner:
+        provider: litellm
+        model_id: openai/gpt-4o-mini
+        cost_tier: cheap
+        temperature: 0.7
+      confirmation:
+        provider: litellm
+        model_id: openai/gpt-4o-mini
+        cost_tier: cheap
+      reporting:
+        provider: litellm
+        model_id: openai/gpt-4o-mini
+        cost_tier: cheap
+  balanced:
+    roles:
+      core_reasoner:
+        provider: litellm
+        model_id: anthropic.claude-3-sonnet-20240229
+        cost_tier: balanced
+      confirmation:
+        provider: litellm
+        model_id: openai/gpt-4o-mini
+        cost_tier: cheap
+      reporting:
+        provider: bedrock
+        model_id: us.anthropic.claude-4-sonnet-20240229-v1:0
+        cost_tier: premium
+  premium:
+    roles:
+      core_reasoner:
+        provider: bedrock
+        model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
+        cost_tier: premium
+      confirmation:
+        provider: bedrock
+        model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
+        cost_tier: premium
+      reporting:
+        provider: bedrock
+        model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
+        cost_tier: premium

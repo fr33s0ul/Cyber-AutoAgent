@@ -90,6 +90,24 @@ def _clean_remediation_text(text: str) -> str:
     return t
 
 
+def _build_evidence_summary(evidence: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for item in evidence:
+        if item.get("category") != "finding":
+            continue
+        parsed = item.get("parsed") if isinstance(item.get("parsed"), dict) else {}
+        title = parsed.get("vulnerability") or _safe_truncate(str(item.get("content", "")), 80)
+        classification = item.get("validation_classification") or "UNSPECIFIED"
+        confirmation = item.get("confirmation_status") or item.get("validation_status") or "unverified"
+        confidence = item.get("confidence", "?")
+        lines.append(
+            f"- {title}: classification={classification}, confirmation={confirmation}, confidence={confidence}"
+        )
+    if not lines:
+        return "- No confirmed evidence collected"
+    return "\n".join(lines)
+
+
 @tool
 def build_report_sections(
     operation_id: str,
@@ -229,6 +247,8 @@ def build_report_sections(
                                 "confidence": conf,
                                 "parsed": parsed_evidence if isinstance(parsed_evidence, dict) else {},
                                 "validation_status": str(metadata.get("validation_status", "")).strip() or None,
+                                "validation_classification": metadata.get("validation_classification"),
+                                "confirmation_status": metadata.get("confirmation_status"),
                             }
                         )
                         evidence.append(item)
@@ -464,6 +484,7 @@ def build_report_sections(
             "analysis_framework": domain_lens.get("framework", ""),
             "module": module,
             "evidence_count": len(evidence),
+            "evidence_summary": _build_evidence_summary(evidence),
             "canonical_findings": canonical_findings,
             # Execution metrics for direct insertion into the template
             "input_tokens": metrics_input,
