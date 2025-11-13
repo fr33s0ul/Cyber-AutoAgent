@@ -1013,8 +1013,8 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
             groups[sev].append(item)
 
     header = (
-        "| Severity | Count | Canonical Finding | Primary Location | Verified | Confidence |\n"
-        "|----------|-------|-------------------|------------------|----------|------------|\n"
+        "| Severity | Count | Canonical Finding | Primary Location | Classification | Verified | Confidence |\n"
+        "|----------|-------|-------------------|------------------|----------------|----------|------------|\n"
     )
 
     rows: List[str] = []
@@ -1040,6 +1040,7 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
 
         # Verified status from canonical finding
         vstat = str(top.get("validation_status") or "").strip().lower()
+        classification = str(top.get("validation_classification") or "-")
         verified = "Verified" if vstat == "verified" else ("Unverified" if vstat else "-")
 
         # Confidence range across group
@@ -1064,15 +1065,17 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
         link_text = vuln if vuln else "-"
         canonical_link = f"[{link_text}](#{anchor})"
 
-        rows.append(f"| {sev} | {count} | {canonical_link} | {where or '-'} | {verified} | {conf_str} |")
+        rows.append(
+            f"| {sev} | {count} | {canonical_link} | {where or '-'} | {classification} | {verified} | {conf_str} |"
+        )
 
     return (
         header + "\n".join(rows)
         if rows
         else (
-            "| Severity | Count | Canonical Finding | Primary Location | Verified | Confidence |\n"
-            "|----------|-------|-------------------|------------------|----------|------------|\n"
-            "| NONE | 0 | - | - | - | - |"
+            "| Severity | Count | Canonical Finding | Primary Location | Classification | Verified | Confidence |\n"
+            "|----------|-------|-------------------|------------------|----------------|----------|------------|\n"
+            "| NONE | 0 | - | - | - | - | - |"
         )
     )
 
@@ -1142,6 +1145,12 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                     if status:
                         st_norm = "Verified" if status.lower() == "verified" else "Unverified"
                         line += f" | **Status:** {st_norm}"
+                    classification = item.get("validation_classification")
+                    if classification:
+                        line += f" | **Classification:** {classification}"
+                    confirm_state = item.get("confirmation_status")
+                    if confirm_state:
+                        line += f" | **Confirmation:** {confirm_state}"
                     evidence_text += line + "\n\n"
 
                     if parsed.get("where"):
@@ -1194,6 +1203,12 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                         if status:
                             st_norm = "Verified" if status.lower() == "verified" else "Unverified"
                             line += f" | **Status:** {st_norm}"
+                        classification = item.get("validation_classification")
+                        if classification:
+                            line += f" | **Classification:** {classification}"
+                        confirm_state = item.get("confirmation_status")
+                        if confirm_state:
+                            line += f" | **Confirmation:** {confirm_state}"
                         evidence_text += line + "\n\n"
                         evidence_text += f"**Details:**\n```\n{content}\n```"
                     else:

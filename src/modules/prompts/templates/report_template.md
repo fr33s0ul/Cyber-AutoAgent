@@ -50,6 +50,9 @@
 ## EVIDENCE COLLECTION
 {evidence_text}
 
+### Evidence Summary
+{evidence_summary}
+
 ## RISK ASSESSMENT
 ```mermaid
 pie title Vulnerability Distribution by Severity

@@ -111,6 +111,7 @@ from rich.text import Text
 from strands import tool
 
 from modules.config.manager import get_config_manager
+from modules.validation.response_validation import ResponseClassification
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -121,6 +122,18 @@ console = Console()
 # Global configuration and client
 _MEMORY_CONFIG = None
 _MEMORY_CLIENT = None
+
+SEVERITY_ORDER = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
+CLASSIFICATION_CAPS = {
+    ResponseClassification.NO_EVIDENCE: ("INFO", 25.0),
+    ResponseClassification.MISCONFIGURATION_OR_FALLBACK: ("LOW", 35.0),
+    ResponseClassification.NEGATIVE_CONTROL_MATCH: ("INFO", 25.0),
+    ResponseClassification.POTENTIAL_AUTH_WEAKNESS: ("MEDIUM", 55.0),
+}
+CONFIRMED_CLASSIFICATIONS = {
+    ResponseClassification.CONFIRMED_AUTH_BYPASS,
+    ResponseClassification.CONFIRMED_IMPACT,
+}
 
 
 TOOL_SPEC = {
@@ -1508,6 +1521,16 @@ def mem0_memory(
 
             # Consolidated validation for findings (single pass)
             if metadata.get("category") == "finding":
+                classification_label = str(metadata.get("validation_classification", "")).upper()
+                classification = ResponseClassification.__members__.get(
+                    classification_label, ResponseClassification.NO_EVIDENCE
+                )
+                metadata["validation_classification"] = classification.value
+                if "confirmation_status" not in metadata:
+                    metadata["confirmation_status"] = (
+                        "confirmed" if classification in CONFIRMED_CLASSIFICATIONS else "pending"
+                    )
+
                 # 1. Normalize severity
                 valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
                 sev = str(metadata.get("severity", "MEDIUM")).upper()
@@ -1551,6 +1574,25 @@ def mem0_memory(
                 # 4. Cap confidence for pattern matches
                 if metadata.get("evidence_type") == "pattern_match":
                     metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "35%"), cap_to=40.0)
+
+                # 5. Auto-cap severity/confidence based on classification
+                cap_tuple = CLASSIFICATION_CAPS.get(classification)
+                if cap_tuple:
+                    allowed_sev, conf_cap = cap_tuple
+                    if SEVERITY_ORDER[sev] > SEVERITY_ORDER[allowed_sev]:
+                        metadata["severity_before_auto_adjustment"] = sev
+                        sev = allowed_sev
+                        metadata["severity"] = sev
+                    metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "45%"), cap_to=conf_cap)
+                    current_status = str(metadata.get("validation_status", "")).lower()
+                    if current_status not in {"hypothesis", "unverified"}:
+                        metadata["validation_status"] = "hypothesis"
+                elif classification not in CONFIRMED_CLASSIFICATIONS and SEVERITY_ORDER[sev] > SEVERITY_ORDER["MEDIUM"]:
+                    metadata["severity_before_auto_adjustment"] = sev
+                    sev = "MEDIUM"
+                    metadata["severity"] = sev
+                    metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "50%"), cap_to=60.0)
+                    metadata["validation_status"] = "hypothesis"
 
             # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")

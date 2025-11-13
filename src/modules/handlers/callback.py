@@ -19,6 +19,7 @@ from strands.handlers import PrintingCallbackHandler
 from ..handlers.events import get_emitter
 from .base import HandlerState, StepLimitReached
 from .utils import emit_event
+from modules.coverage.tracker import record_tool_activity
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -121,6 +122,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
                                 try:
+                                    command_text = ""
+                                    if tool_use.get("name") == "shell":
+                                        raw_cmd = tool_input.get("command")
+                                        if isinstance(raw_cmd, list):
+                                            command_text = " ".join(str(p) for p in raw_cmd)
+                                        elif isinstance(raw_cmd, str):
+                                            command_text = raw_cmd
+                                    record_tool_activity(self.state.operation_id, tool_use.get("name", ""), command_text)
                                     # Emit tool start event
                                     tool_name = tool_use.get("name", "unknown")
                                     emit_event(
@@ -203,6 +212,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                     self.state.shown_tools.add(tool_id)
                     self.state.tool_use_map[tool_id] = tool
                     try:
+                        command_text = ""
+                        if tool.get("name") == "shell":
+                            raw_cmd = tool_input.get("command")
+                            if isinstance(raw_cmd, list):
+                                command_text = " ".join(str(p) for p in raw_cmd)
+                            elif isinstance(raw_cmd, str):
+                                command_text = raw_cmd
+                        record_tool_activity(self.state.operation_id, tool.get("name", ""), command_text)
                         # Emit tool start event
                         tool_name = tool.get("name", "unknown")
                         emit_event(
@@ -332,6 +349,10 @@ class ReasoningHandler(PrintingCallbackHandler):
 
             # Emit reasoning event instead of direct print
             emit_event("reasoning", normalized_text, operation_id=self.state.operation_id, step=self.state.steps)
+            try:
+                os.environ["CYBER_CURRENT_STEPS"] = str(self.state.steps)
+            except Exception:
+                pass
             self.state.last_was_reasoning = True
 
     def generate_report(self, agent: Any, objective: str) -> None:
