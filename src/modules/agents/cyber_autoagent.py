@@ -32,11 +32,7 @@ from modules.tools.memory import get_memory_client, initialize_memory_system, me
 from modules.tools.prompt_optimizer import prompt_optimizer
 from modules.tools.response_validation_tool import response_validation_tool
 from modules.tools.finding_confirmation_tool import confirm_finding_tool
-from modules.tools.knowledge_base import knowledge_base_lookup, list_high_impact_patterns
-from modules.tools.zero_day_detector import zero_day_pattern_scan
-from modules.planner.adaptive_chain import adaptive_chain_plan
 from modules.validation.response_validation import bootstrap_default_baselines
-from modules.telemetry.cost_tracker import register_pricing
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -420,7 +416,6 @@ def create_agent(
     # Backward-compatibility: accept keyword args used by older tests
     user_provider_override = False
     user_model_override = False
-    user_steps_override = False
     if kwargs:
         if "provider" in kwargs and kwargs["provider"]:
             config.provider = kwargs["provider"]
@@ -458,7 +453,7 @@ def create_agent(
 
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
-    profile_name = os.getenv("CYBER_MODEL_PROFILE", "bedrock-haiku3").lower()
+    profile_name = os.getenv("CYBER_MODEL_PROFILE", "balanced").lower()
     core_profile = None
     if not user_model_override:
         get_role = getattr(config_manager, "get_profile_role", None)
@@ -475,7 +470,6 @@ def create_agent(
             config.provider = core_profile["provider"]
         if not config.model_id and core_profile.get("model_id"):
             config.model_id = core_profile["model_id"]
-        register_pricing(core_profile.get("model_id"), config.provider, core_profile.get("pricing"))
         agent_logger.info(
             "Model profile '%s' selected core provider=%s model=%s",
             profile_name,
@@ -483,10 +477,6 @@ def create_agent(
             config.model_id,
         )
     core_role_params = core_profile.get("parameters", {}) if isinstance(core_profile, dict) else {}
-
-    if not user_steps_override and profile_name in {"cheap", "bedrock-haiku3"}:
-        config.max_steps = max(config.max_steps, 140)
-        os.environ["CYBER_BREADTH_MODE"] = "haiku"
     config_manager.validate_requirements(config.provider)
 
     # Prepare overrides if user specified a model
@@ -983,10 +973,6 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         python_repl,
         response_validation_tool,
         confirm_finding_tool,
-        knowledge_base_lookup,
-        list_high_impact_patterns,
-        zero_day_pattern_scan,
-        adaptive_chain_plan,
     ]
 
     # Inject module-specific tools if available

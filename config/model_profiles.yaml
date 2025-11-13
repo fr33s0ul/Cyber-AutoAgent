@@ -1,111 +1,44 @@
 profiles:
-  bedrock-haiku3:
-    description: "Default profile — Claude 3 Haiku for breadth, premium Claude 4.5 for verification/reporting"
-    roles:
-      core_reasoner:
-        provider: bedrock
-        model_id: us.anthropic.claude-3-haiku-20240307-v1:0
-        cost_tier: cheap
-        context_tokens: 200000
-        latency_hint_ms: 1200
-        pricing:
-          input_per_1k: 0.00025
-          output_per_1k: 0.00125
-        parameters:
-          temperature: 0.35
-          max_tokens: 3500
-      confirmation:
-        provider: bedrock
-        model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
-        cost_tier: premium
-        context_tokens: 200000
-        latency_hint_ms: 3300
-        pricing:
-          input_per_1k: 0.0030
-          output_per_1k: 0.0150
-        parameters:
-          temperature: 0.15
-          max_tokens: 2000
-      reporting:
-        provider: bedrock
-        model_id: us.anthropic.claude-4-sonnet-20240229-v1:0
-        cost_tier: premium
-        context_tokens: 200000
-        latency_hint_ms: 2800
-        pricing:
-          input_per_1k: 0.0030
-          output_per_1k: 0.0150
-        parameters:
-          temperature: 0.2
-          max_tokens: 4000
   cheap:
     roles:
       core_reasoner:
         provider: litellm
         model_id: openai/gpt-4o-mini
         cost_tier: cheap
-        pricing:
-          input_per_1k: 0.0006
-          output_per_1k: 0.0024
-        parameters:
-          temperature: 0.7
+        temperature: 0.7
       confirmation:
         provider: litellm
         model_id: openai/gpt-4o-mini
         cost_tier: cheap
-        pricing:
-          input_per_1k: 0.0006
-          output_per_1k: 0.0024
       reporting:
         provider: litellm
         model_id: openai/gpt-4o-mini
         cost_tier: cheap
-        pricing:
-          input_per_1k: 0.0006
-          output_per_1k: 0.0024
   balanced:
     roles:
       core_reasoner:
         provider: litellm
         model_id: anthropic.claude-3-sonnet-20240229
         cost_tier: balanced
-        pricing:
-          input_per_1k: 0.003
-          output_per_1k: 0.015
       confirmation:
         provider: litellm
         model_id: openai/gpt-4o-mini
         cost_tier: cheap
-        pricing:
-          input_per_1k: 0.0006
-          output_per_1k: 0.0024
       reporting:
         provider: bedrock
         model_id: us.anthropic.claude-4-sonnet-20240229-v1:0
         cost_tier: premium
-        pricing:
-          input_per_1k: 0.0030
-          output_per_1k: 0.0150
   premium:
     roles:
       core_reasoner:
         provider: bedrock
         model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
         cost_tier: premium
-        pricing:
-          input_per_1k: 0.0030
-          output_per_1k: 0.0150
       confirmation:
         provider: bedrock
         model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
         cost_tier: premium
-        pricing:
-          input_per_1k: 0.0030
-          output_per_1k: 0.0150
       reporting:
         provider: bedrock
         model_id: us.anthropic.claude-4.5-sonnet-20240620-v1:0
         cost_tier: premium
-        pricing:
-          input_per_1k: 0.0030
-          output_per_1k: 0.0150

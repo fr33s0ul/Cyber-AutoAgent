@@ -63,7 +63,7 @@ class ReportGenerator:
         """
         # Select model via central configuration, with sensible defaults
         cfg = get_config_manager()
-        profile_name = os.getenv("CYBER_MODEL_PROFILE", "bedrock-haiku3").lower()
+        profile_name = os.getenv("CYBER_MODEL_PROFILE", "balanced").lower()
         reporting_role = None
         get_role = getattr(cfg, "get_profile_role", None)
         if callable(get_role):
@@ -79,8 +79,6 @@ class ReportGenerator:
         prov = (effective_provider or "bedrock").lower()
         if not model_id and isinstance(reporting_role, dict) and reporting_role.get("model_id"):
             model_id = reporting_role.get("model_id")
-        if isinstance(reporting_role, dict):
-            register_pricing(model_id, prov, reporting_role.get("pricing"))
         if prov == "bedrock":
             # Always use the primary bedrock model from config
             llm_cfg = cfg.get_llm_config("bedrock")

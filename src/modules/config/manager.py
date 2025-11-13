@@ -573,9 +573,6 @@ class ConfigManager:
             "model_id": entry.get("model_id"),
             "parameters": entry.get("parameters", {}),
             "cost_tier": entry.get("cost_tier", "balanced"),
-            "pricing": entry.get("pricing"),
-            "context_tokens": entry.get("context_tokens"),
-            "latency_hint_ms": entry.get("latency_hint_ms"),
         }
 
     def get_server_config(self, provider: str, **overrides) -> ServerConfig:

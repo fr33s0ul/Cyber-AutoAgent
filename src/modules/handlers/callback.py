@@ -20,7 +20,6 @@ from ..handlers.events import get_emitter
 from .base import HandlerState, StepLimitReached
 from .utils import emit_event
 from modules.coverage.tracker import record_tool_activity
-from modules.telemetry.cost_tracker import record_usage as record_cost_usage
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 

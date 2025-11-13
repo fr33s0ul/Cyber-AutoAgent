@@ -109,54 +109,6 @@ def _build_evidence_summary(evidence: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _format_confirmed_high(evidence: List[Dict[str, Any]]) -> str:
-    lines: List[str] = []
-    for item in evidence:
-        severity = str(item.get("severity", "")).upper()
-        classification = str(item.get("validation_classification", "")).upper()
-        confirmation = str(item.get("confirmation_status", "")).lower()
-        confirmed = "CONFIRMED" in classification or confirmation in {"confirmed", "success", "true"}
-        if confirmed and severity in {"CRITICAL", "HIGH"}:
-            parsed = item.get("parsed") if isinstance(item.get("parsed"), dict) else {}
-            title = parsed.get("vulnerability") or _safe_truncate(str(item.get("content", "")), 80)
-            confidence = parsed.get("confidence") or item.get("confidence")
-            lines.append(
-                f"- {title} ({severity}) — classification {classification}, confidence {confidence}"
-            )
-    return "- No confirmed high-impact findings" if not lines else "\n".join(lines)
-
-
-def _format_potential_findings(evidence: List[Dict[str, Any]]) -> str:
-    lines: List[str] = []
-    for item in evidence:
-        classification = str(item.get("validation_classification", "")).upper()
-        confirmation = str(item.get("confirmation_status", "")).lower()
-        if "CONFIRMED" in classification or confirmation in {"confirmed", "success", "true"}:
-            continue
-        severity = str(item.get("severity", "")).upper()
-        if severity not in {"CRITICAL", "HIGH", "MEDIUM"}:
-            continue
-        parsed = item.get("parsed") if isinstance(item.get("parsed"), dict) else {}
-        title = parsed.get("vulnerability") or _safe_truncate(str(item.get("content", "")), 80)
-        lines.append(f"- {title} ({severity}) — classification {classification} — manual review required")
-    return "- None" if not lines else "\n".join(lines)
-
-
-def _format_cost_breakdown(cost_info: Dict[str, Any]) -> str:
-    if not cost_info:
-        return "No per-call cost telemetry captured"
-    prompt_tokens = int(cost_info.get("prompt_tokens", 0))
-    completion_tokens = int(cost_info.get("completion_tokens", 0))
-    cost = float(cost_info.get("cost", 0))
-    return "\n".join(
-        [
-            f"- Prompt tokens: {prompt_tokens}",
-            f"- Completion tokens: {completion_tokens}",
-            f"- Estimated USD spend: ${cost:.4f}",
-        ]
-    )
-
-
 @tool
 def build_report_sections(
     operation_id: str,
@@ -543,8 +495,6 @@ def build_report_sections(
             "module": module,
             "evidence_count": len(evidence),
             "evidence_summary": _build_evidence_summary(evidence),
-            "confirmed_high_impact": _format_confirmed_high(evidence),
-            "potential_findings": _format_potential_findings(evidence),
             "canonical_findings": canonical_findings,
             # Execution metrics for direct insertion into the template
             "input_tokens": metrics_input,
