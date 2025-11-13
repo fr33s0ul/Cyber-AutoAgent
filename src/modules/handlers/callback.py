@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from strands.handlers import PrintingCallbackHandler
 
@@ -71,6 +71,8 @@ class ReasoningHandler(PrintingCallbackHandler):
     def __call__(self, **kwargs):
         """Process callback events with proper step limiting and clean formatting"""
 
+        self._maybe_record_cost(kwargs)
+
         # Check for interrupt
         if "cyberautoagent" in sys.modules:
             cyberautoagent = sys.modules["cyberautoagent"]
@@ -97,6 +99,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         if "message" in kwargs:
             message = kwargs["message"]
             if isinstance(message, dict):
+                self._maybe_record_cost(message)
                 content = message.get("content", [])
 
                 # Agent tracking handled through explicit handoff events only
@@ -287,6 +290,58 @@ class ReasoningHandler(PrintingCallbackHandler):
             if not self.state.suppress_parent_output:
                 super().__call__(**kwargs)
             return
+
+    def _extract_usage_payload(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return None
+        for key in ("usage", "token_usage", "tokenUsage"):
+            maybe = payload.get(key)
+            if isinstance(maybe, dict):
+                return maybe
+        message = payload.get("message")
+        if isinstance(message, dict):
+            for key in ("usage", "token_usage", "tokenUsage"):
+                maybe = message.get(key)
+                if isinstance(maybe, dict):
+                    return maybe
+        return None
+
+    def _maybe_record_cost(self, payload: Dict[str, Any]) -> None:
+        usage = self._extract_usage_payload(payload)
+        if not usage:
+            return
+        try:
+            prompt_tokens = float(
+                usage.get("prompt_tokens")
+                or usage.get("input_tokens")
+                or usage.get("promptTokens")
+                or usage.get("inputTokens")
+                or 0
+            )
+            completion_tokens = float(
+                usage.get("completion_tokens")
+                or usage.get("output_tokens")
+                or usage.get("completionTokens")
+                or usage.get("outputTokens")
+                or 0
+            )
+        except Exception:
+            return
+        if prompt_tokens <= 0 and completion_tokens <= 0:
+            return
+        provider = (
+            usage.get("provider")
+            or os.getenv("CYBER_ACTIVE_PROVIDER")
+            or os.getenv("CYBER_AGENT_PROVIDER", "bedrock")
+        )
+        model_id = usage.get("model") or usage.get("model_id") or os.getenv("CYBER_ACTIVE_MODEL", "")
+        record_cost_usage(
+            self.state.operation_id,
+            str(provider),
+            str(model_id),
+            prompt_tokens,
+            completion_tokens,
+        )
 
     def _is_valid_tool_use(self, tool_name: str, tool_input: Any) -> bool:
         """Check if this tool use has valid input (not empty)"""

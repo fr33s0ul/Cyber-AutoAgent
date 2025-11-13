@@ -422,6 +422,7 @@ def create_agent(
             user_provider_override = True
         if "max_steps" in kwargs and kwargs["max_steps"]:
             config.max_steps = int(kwargs["max_steps"])
+            user_steps_override = True
         if "op_id" in kwargs and kwargs["op_id"]:
             config.op_id = kwargs["op_id"]
         # Some tests may use 'model' instead of 'model_id'
@@ -493,6 +494,10 @@ def create_agent(
     # Use provided model_id or default
     if config.model_id is None:
         config.model_id = server_config.llm.model_id
+
+    os.environ["CYBER_ACTIVE_PROVIDER"] = config.provider
+    if config.model_id:
+        os.environ["CYBER_ACTIVE_MODEL"] = config.model_id
 
 
     # Use provided operation_id or generate new one

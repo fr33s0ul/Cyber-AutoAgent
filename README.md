@@ -162,6 +162,7 @@ The compose stack automatically provides:
 - **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
 - **[Terminal Frontend](docs/terminal-frontend.md)** - React interface architecture and event protocol
 - **[Prompt Management](docs/prompt_management.md)** - Module system and prompt loading
+- **[Haiku3 vs Premium Benchmarks](benchmark_harness/haiku3_vs_premium.md)** - Cost/performance comparison harness and results
 
 ## Features
 

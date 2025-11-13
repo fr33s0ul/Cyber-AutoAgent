@@ -19,6 +19,7 @@ from strands.models.ollama import OllamaModel
 
 from modules.config.manager import get_config_manager
 from modules.prompts.factory import get_report_agent_system_prompt
+from modules.telemetry.cost_tracker import register_pricing
 
 logger = logging.getLogger(__name__)
 

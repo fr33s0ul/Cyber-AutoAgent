@@ -25,6 +25,7 @@ from modules.prompts.factory import (
 from modules.tools.memory import get_memory_client, Mem0ServiceClient
 from modules.config.manager import get_config_manager
 from modules.handlers.core.utils import sanitize_target_name
+from modules.telemetry.cost_tracker import summarize as summarize_costs
 
 logger = logging.getLogger(__name__)
 
@@ -436,6 +437,15 @@ def build_report_sections(
             # Ignore metrics extraction failures silently
             pass
 
+        cost_info = summarize_costs(operation_id)
+        if cost_info:
+            if not metrics_input:
+                metrics_input = int(cost_info.get("prompt_tokens", metrics_input))
+            if not metrics_output:
+                metrics_output = int(cost_info.get("completion_tokens", metrics_output))
+            if cost_info.get("cost") and not metrics_cost:
+                metrics_cost = float(cost_info.get("cost"))
+
         # Build canonical findings (first per severity) with stable anchors
         canonical_findings: Dict[str, Dict[str, Any]] = {}
         for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
@@ -494,6 +504,9 @@ def build_report_sections(
             "estimated_cost": (
                 f"${metrics_cost:.4f}" if isinstance(metrics_cost, (int, float)) and metrics_cost > 0 else "N/A"
             ),
+            "cost_breakdown": _format_cost_breakdown(cost_info),
+            "model_profile": os.getenv("CYBER_MODEL_PROFILE", "bedrock-haiku3"),
+            "model_provider": os.getenv("CYBER_AGENT_PROVIDER", "bedrock"),
         }
 
         logger.info(

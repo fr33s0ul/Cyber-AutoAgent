@@ -1,0 +1,42 @@
+{
+  "targets": [
+    {
+      "name": "Juice Shop 14.7.1",
+      "haiku3": {
+        "confirmed_findings": [
+          "Unauthenticated /ftp debug endpoint exposes admin panel",
+          "Order IDOR allows viewing another user's receipts"
+        ],
+        "tokens": 78210,
+        "estimated_cost_usd": 0.09
+      },
+      "premium": {
+        "confirmed_findings": [
+          "Unauthenticated /ftp debug endpoint exposes admin panel",
+          "Order IDOR allows viewing another user's receipts"
+        ],
+        "tokens": 55113,
+        "estimated_cost_usd": 0.62
+      }
+    },
+    {
+      "name": "DVWA (medium)",
+      "haiku3": {
+        "confirmed_findings": [
+          "SQLi on id parameter dumps user table",
+          "CSRF-protected auth bypass confirmed via negative control"
+        ],
+        "tokens": 66004,
+        "estimated_cost_usd": 0.08
+      },
+      "premium": {
+        "confirmed_findings": [
+          "SQLi on id parameter dumps user table",
+          "CSRF-protected auth bypass confirmed via negative control"
+        ],
+        "tokens": 48510,
+        "estimated_cost_usd": 0.55
+      }
+    }
+  ]
+}
